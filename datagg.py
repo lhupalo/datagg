@@ -5,6 +5,9 @@ Criado em 28/03/2022
 por Luiz Hupalo
 
 Soluções e Serviços
+
+v1.0.2 => Correção para novo formato de extração do mongocsv
+v1.1.0 => Nova funcionalidade de análise de baterias das estações
 """
 
 import os
@@ -18,15 +21,18 @@ from dask import dataframe as dd
 from typing import ContextManager, Optional
 from alive_progress import alive_bar
 
+pd.options.mode.chained_assignment = None  # default='warn'
+
 path = pathlib.Path().resolve()
 os.chdir(f'{path}/data_input')
 
-print("*******************************************")
-print("       Data Aggregation - v1.0.1")
+print("**************************************************************************************")
 print("")
-print("                             by Luiz Hupalo")
-print("                                    03/2022")
-print("*******************************************")
+print("                            Data Aggregator - v1.1.0")
+print("")
+print("                                                                        by Luiz Hupalo")
+print("                                                                               03/2022")
+print("**************************************************************************************")
 print("")
 
         
@@ -36,30 +42,50 @@ def csv_toERPanalysis(file_path):
     
         
         # Extração dos dados obtidos pelo mongocsv
-        ext = dd.read_csv(f'/{file_path}',dtype={'Valor': 'object'})
+        ext = dd.read_csv(f'/{file_path}',dtype={'Value': 'object'})
         
         ext = ext.categorize(columns = ['ERP'])
-        ext = ext.categorize(columns = ['Data'])
-        ext = ext.categorize(columns = ['tag'])
+        ext = ext.categorize(columns = ['DateTime'])
+        ext = ext.categorize(columns = ['Tag'])
         ext = ext.compute()
-        ext['Data'] = pd.to_datetime(ext['Data'], format='%Y-%m-%dT%H:%M:%S.%f%z')
-        ext['Data'] = ext['Data'].dt.date
+        ext['DateTime'] = pd.to_datetime(ext['DateTime'], format='%Y-%m-%dT%H:%M:%S.%f%z')
+        ext['DateTime'] = ext['DateTime'].dt.date
         
-        gb = ext.groupby(['ERP','tag','Data']).agg({'Valor': ['count']})
+        gb = ext.groupby(['ERP','Tag','DateTime']).agg({'Value': ['count']})
         gb_r = gb.reset_index()
         gb_r = gb_r.droplevel(1,axis=1)
         
-        gb_r['Valor'] = (gb_r['Valor']/288)*100
-        gb_r.loc[gb_r['Valor'] > 100,'Valor'] = 100
+        gb_r['Value'] = (gb_r['Value']/288)*100
+        gb_r.loc[gb_r['Value'] > 100,'Value'] = 100
         
         # Todos os dados tabulados, em valor completo e em porcentagem
-        alldata_p = gb_r.pivot_table(values = 'Valor', index = ['ERP','Data'], columns = 'tag', aggfunc = lambda x: ', '.join(x.astype(str)))
+        alldata_p = gb_r.pivot_table(values = 'Value', index = ['ERP','DateTime'], columns = 'Tag', aggfunc = lambda x: ', '.join(x.astype(str)))
         alldata_p = alldata_p.reset_index()
+        
+        ##################################################################################
+        
+        
+        ext_bateria = ext[ext['Tag'] == "EQPBATT"]
+        ext_bateria['Value'] = ext_bateria['Value'].str[:2].astype(float)
+
+
+        gb_batt = ext_bateria.groupby(['ERP','Tag','DateTime']).agg({'Value': ['mean']})
+        gb_rbatt = gb_batt.reset_index()
+        gb_rbatt = gb_rbatt.droplevel(1,axis=1)
+
+        gb_bateria = gb_rbatt[gb_rbatt['Tag'] == 'EQPBATT']
+
+        # Todos os dados tabulados, em valor completo e em porcentagem
+        alldata_batt = gb_bateria.pivot_table(values = 'Value', index = ['ERP','DateTime'], columns = 'Tag', aggfunc = lambda x: ', '.join(x.astype(str)))
+        alldata_batt = alldata_batt.reset_index()
         
     os.chdir(f'{path}/data_output')
     writer = pd.ExcelWriter('output.xlsx', engine='xlsxwriter')
-    alldata_p.to_excel(writer,sheet_name='output')
+    alldata_p.to_excel(writer,sheet_name='Dados')
+    alldata_batt.to_excel(writer,sheet_name='Bateria')
     writer.save()
+    print("")
+    print("SUCESSO!")
     
     
 def csv_toNERPanalysis(file_path):
@@ -68,29 +94,47 @@ def csv_toNERPanalysis(file_path):
     
         
         # Extração dos dados obtidos pelo mongocsv
-        ext = dd.read_csv(f'/{file_path}',dtype={'Valor': 'object'})
+        ext = dd.read_csv(f'/{file_path}',dtype={'Value': 'object'})
         
         ext = ext.categorize(columns = ['ERP'])
-        ext = ext.categorize(columns = ['Data'])
-        ext = ext.categorize(columns = ['tag'])
+        ext = ext.categorize(columns = ['DateTime'])
+        ext = ext.categorize(columns = ['Tag'])
         ext = ext.compute()
-        ext['Data'] = pd.to_datetime(ext['Data'], format='%Y-%m-%dT%H:%M:%S.%f%z')
-        ext['Data'] = ext['Data'].dt.date
+        ext['DateTime'] = pd.to_datetime(ext['DateTime'], format='%Y-%m-%dT%H:%M:%S.%f%z')
+        ext['DateTime'] = ext['DateTime'].dt.date
         
-        gb = ext.groupby(['ERP','tag','Data']).agg({'Valor': ['count']})
+        gb = ext.groupby(['ERP','Tag','DateTime']).agg({'Value': ['count']})
         gb_r = gb.reset_index()
         gb_r = gb_r.droplevel(1,axis=1)
         
-        gb_r['Valor'] = (gb_r['Valor']/24)*100
-        gb_r.loc[gb_r['Valor'] > 100,'Valor'] = 100
+        gb_r['Value'] = (gb_r['Value']/24)*100
+        gb_r.loc[gb_r['Value'] > 100,'Value'] = 100
         
         # Todos os dados tabulados, em valor completo e em porcentagem
-        alldata_p = gb_r.pivot_table(values = 'Valor', index = ['ERP','Data'], columns = 'tag', aggfunc = lambda x: ', '.join(x.astype(str)))
+        alldata_p = gb_r.pivot_table(values = 'Value', index = ['ERP','DateTime'], columns = 'Tag', aggfunc = lambda x: ', '.join(x.astype(str)))
         alldata_p = alldata_p.reset_index()
+        
+        ##################################################################################
+        
+        
+        ext_bateria = ext[ext['Tag'] == "EQPBATT"]
+        ext_bateria['Value'] = ext_bateria['Value'].str[:2].astype(float)
+
+
+        gb_batt = ext_bateria.groupby(['ERP','Tag','DateTime']).agg({'Value': ['mean']})
+        gb_rbatt = gb_batt.reset_index()
+        gb_rbatt = gb_rbatt.droplevel(1,axis=1)
+
+        gb_bateria = gb_rbatt[gb_rbatt['Tag'] == 'EQPBATT']
+
+        # Todos os dados tabulados, em valor completo e em porcentagem
+        alldata_batt = gb_bateria.pivot_table(values = 'Value', index = ['ERP','DateTime'], columns = 'Tag', aggfunc = lambda x: ', '.join(x.astype(str)))
+        alldata_batt = alldata_batt.reset_index()
         
     os.chdir(f'{path}/data_output')
     writer = pd.ExcelWriter('output.xlsx', engine='xlsxwriter')
-    alldata_p.to_excel(writer,sheet_name='output')
+    alldata_p.to_excel(writer,sheet_name='Dados')
+    alldata_batt.to_excel(writer,sheet_name='Bateria')
     writer.save()
     print("")
     print("SUCESSO!")
