@@ -2,10 +2,6 @@
 
 Criado em 28/03/2022 
 
-por Luiz Hupalo
-
-Soluções e Serviços
-
 v1.0.2 => Correção para novo formato de extração do mongocsv
 v1.1.0 => Nova funcionalidade de análise de baterias das estações
 """
